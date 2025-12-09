@@ -3,6 +3,7 @@ import { StatusBadge } from '../atoms/Badge';
 import { Skeleton } from '../atoms/Skeleton';
 import { Animal, DashboardSummary } from '../../types';
 import { formatDuration } from '../../api/mockData';
+import { formatRelativeTime } from '../../utils/timezone';
 import { Clock, Activity, TrendingUp } from 'lucide-react';
 
 interface AnimalProfileCardProps {
@@ -12,21 +13,6 @@ interface AnimalProfileCardProps {
 }
 
 export function AnimalProfileCard({ animal, summary, isLoading }: AnimalProfileCardProps) {
-  const formatLastUpdated = (timestamp: string) => {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins} min ago`;
-    
-    const diffHours = Math.floor(diffMins / 60);
-    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
-    
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-  };
-
   return (
     <Card className="mb-6">
       <div className="flex flex-col lg:flex-row lg:items-center gap-6">
@@ -57,7 +43,7 @@ export function AnimalProfileCard({ animal, summary, isLoading }: AnimalProfileC
               Age {animal.age} • {animal.sex} • Enclosure {animal.enclosure}
             </p>
             <p className="text-xs text-gray-400 mt-1">
-              Last updated: {formatLastUpdated(animal.last_updated)}
+              Last updated: {formatRelativeTime(animal.last_updated)}
             </p>
           </div>
         </div>

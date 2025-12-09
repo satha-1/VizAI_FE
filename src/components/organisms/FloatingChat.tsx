@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, FormEvent } from 'react';
 import { MessageSquare, X, Send, Bot, User, Sparkles, Minimize2 } from 'lucide-react';
 import { useSendChatQuery } from '../../api/hooks';
 import { ChatMessage } from '../../types';
+import { formatToZooTimeOnly } from '../../utils/timezone';
 
 const suggestedQuestions = [
   'How many times did the anteater pace today?',
@@ -88,11 +89,7 @@ export function FloatingChat() {
   };
 
   const formatTime = (timestamp: string) => {
-    return new Date(timestamp).toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    });
+    return formatToZooTimeOnly(timestamp);
   };
 
   return (

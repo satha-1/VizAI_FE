@@ -32,6 +32,7 @@ import { useBehaviorEvents } from '../api/hooks';
 import { useDateRange } from '../context/DateRangeContext';
 import { BehaviorType, BehaviorEvent, TimelineFilters } from '../types';
 import { behaviorColors, formatDuration } from '../api/mockData';
+import { formatTimestampForTimeline, formatTimestampFull, getZooHour } from '../utils/timezone';
 
 const behaviorIcons: Record<BehaviorType, typeof Footprints> = {
   Pacing: Footprints,
@@ -115,8 +116,8 @@ export function TimelinePage() {
       if (durationFilter === 'medium' && (event.duration_seconds < 30 || event.duration_seconds > 300)) return false;
       if (durationFilter === 'long' && event.duration_seconds <= 300) return false;
 
-      // Time of day filter
-      const hour = new Date(event.start_timestamp).getHours();
+      // Time of day filter (using zoo timezone)
+      const hour = getZooHour(event.start_timestamp);
       const timeOfDay = 
         hour >= 6 && hour < 12 ? 'morning' :
         hour >= 12 && hour < 18 ? 'afternoon' :
@@ -372,17 +373,6 @@ function BehaviorEventCard({ event, onViewVideo }: BehaviorEventCardProps) {
   const Icon = behaviorIcons[event.behavior_type];
   const color = behaviorColors[event.behavior_type];
 
-  const formatTimestamp = (iso: string) => {
-    const date = new Date(iso);
-    return date.toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    });
-  };
-
   return (
     <div className="flex gap-4 p-4 border border-gray-100 rounded-xl hover:border-gray-200 hover:shadow-sm transition-all">
       {/* Icon */}
@@ -403,7 +393,7 @@ function BehaviorEventCard({ event, onViewVideo }: BehaviorEventCardProps) {
           </Badge>
         </div>
         <p className="text-sm text-gray-500 mb-2">
-          {formatTimestamp(event.start_timestamp)}
+          {formatTimestampForTimeline(event.start_timestamp)}
         </p>
         <div className="flex items-center gap-4 text-xs text-gray-400">
           <span className="flex items-center gap-1">
@@ -452,18 +442,6 @@ function VideoModal({ event, relatedEvents, onClose }: VideoModalProps) {
   const { showToast } = useToast();
   const [playbackRate, setPlaybackRate] = useState(1);
   const [videoError, setVideoError] = useState(false);
-
-  const formatTimestamp = (iso: string) => {
-    return new Date(iso).toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: true,
-    });
-  };
 
   const handleDownload = () => {
     showToast('info', 'Download coming in later phase');
@@ -563,11 +541,11 @@ function VideoModal({ event, relatedEvents, onClose }: VideoModalProps) {
                 </div>
                 <div>
                   <dt className="text-xs text-gray-500">Start Time</dt>
-                  <dd className="text-sm text-charcoal">{formatTimestamp(event.start_timestamp)}</dd>
+                  <dd className="text-sm text-charcoal">{formatTimestampFull(event.start_timestamp)}</dd>
                 </div>
                 <div>
                   <dt className="text-xs text-gray-500">End Time</dt>
-                  <dd className="text-sm text-charcoal">{formatTimestamp(event.end_timestamp)}</dd>
+                  <dd className="text-sm text-charcoal">{formatTimestampFull(event.end_timestamp)}</dd>
                 </div>
                 <div>
                   <dt className="text-xs text-gray-500">Duration</dt>

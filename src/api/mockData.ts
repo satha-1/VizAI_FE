@@ -6,6 +6,7 @@ import {
   HourlyHeatmapData,
   BehaviorSummary 
 } from '../types';
+import { getZooHour } from '../utils/timezone';
 
 // Helper to generate random ID
 const generateId = () => Math.random().toString(36).substring(2, 15);
@@ -110,12 +111,13 @@ export const generateMockSummary = (events: BehaviorEvent[]): DashboardSummary =
   // Find most frequent behavior
   const mostFrequent = summaries.reduce((max, b) => b.count > max.count ? b : max, summaries[0]);
 
-  // Generate hourly heatmap
+  // Generate hourly heatmap (using zoo timezone)
   const hourlyHeatmap: HourlyHeatmapData[] = [];
   behaviors.forEach(behavior => {
     for (let hour = 0; hour < 24; hour++) {
       const hourEvents = events.filter(e => {
-        const eventHour = new Date(e.start_timestamp).getHours();
+        // Use zoo timezone for hour calculation
+        const eventHour = getZooHour(e.start_timestamp);
         return e.behavior_type === behavior && eventHour === hour;
       });
       hourlyHeatmap.push({
