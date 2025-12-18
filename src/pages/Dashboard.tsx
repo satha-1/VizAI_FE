@@ -12,7 +12,7 @@ import {
   Legend,
 } from 'recharts';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/atoms/Card';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/atoms/Tabs';
+import { Tabs, TabsList, TabsTrigger } from '../components/atoms/Tabs';
 import { SkeletonChart } from '../components/atoms/Skeleton';
 import { EmptyState } from '../components/atoms/EmptyState';
 import { ErrorState } from '../components/atoms/ErrorState';
@@ -38,7 +38,7 @@ const behaviorIcons: Record<BehaviorType, typeof Footprints> = {
 
 export function DashboardPage() {
   const { dateRange } = useDateRange();
-  const { showToast } = useToast();
+  const { showToast: _showToast } = useToast();
   const [durationView, setDurationView] = useState<'bar' | 'pie'>('bar');
   const [selectedBehavior, setSelectedBehavior] = useState<BehaviorType | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<BehaviorEvent | null>(null);
@@ -237,7 +237,7 @@ export function DashboardPage() {
         <Card>
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle>Behavior Duration</CardTitle>
-            <Tabs value={durationView} onValueChange={(v) => setDurationView(v as 'bar' | 'pie')}>
+            <Tabs defaultValue="bar" value={durationView} onValueChange={(v) => setDurationView(v as 'bar' | 'pie')}>
               <TabsList className="bg-gray-100">
                 <TabsTrigger value="bar">
                   <BarChart3 className="w-4 h-4" />
@@ -323,7 +323,7 @@ export function DashboardPage() {
                         paddingAngle={2}
                         dataKey="percentage"
                         nameKey="name"
-                        label={({ name, percentage }) => `${percentage.toFixed(0)}%`}
+                        label={({ percentage }) => `${percentage.toFixed(0)}%`}
                         labelLine={false}
                       >
                         {durationData.map((entry, index) => (

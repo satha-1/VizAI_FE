@@ -433,7 +433,7 @@ function DailySummaryPreview({ summary }: { summary?: ReturnType<typeof useBehav
 
 // Trend Report Preview Component
 function TrendReportPreview({
-  summary,
+  summary: _summary,
   showDuration,
   showCount,
 }: {
