@@ -57,7 +57,7 @@ export interface Animal {
 }
 
 // Report Types
-export type ReportType = 
+export type ReportType =
   | 'daily_summary'
   | 'weekly_monthly_trend'
   | 'behavior_specific'

@@ -3,7 +3,6 @@ import { useSearchParams } from 'react-router-dom';
 import {
   Filter,
   Play,
-  X,
   RotateCcw,
   Save,
   Clock,
@@ -42,10 +41,10 @@ const behaviorIcons: Record<BehaviorType, typeof Footprints> = {
 };
 
 const timeOfDayOptions = [
-  { key: 'morning', label: 'Morning', icon: Sunrise, range: '06:00–12:00' },
-  { key: 'afternoon', label: 'Afternoon', icon: Sun, range: '12:00–18:00' },
-  { key: 'evening', label: 'Evening', icon: Sunset, range: '18:00–00:00' },
-  { key: 'night', label: 'Night', icon: Moon, range: '00:00–06:00' },
+  { key: 'morning', label: 'Morning', icon: Sunrise, range12: '5:00 AM – 12:00 PM', range24: '05:00 – 12:00' },
+  { key: 'afternoon', label: 'Afternoon', icon: Sun, range12: '12:00 PM – 5:00 PM', range24: '12:00 – 17:00' },
+  { key: 'evening', label: 'Evening', icon: Sunset, range12: '5:00 PM – 8:00 PM', range24: '17:00 – 20:00' },
+  { key: 'night', label: 'Night', icon: Moon, range12: '8:00 PM – 5:00 AM', range24: '20:00 – 05:00' },
 ] as const;
 
 const cameraSources = [
@@ -82,6 +81,7 @@ export function TimelinePage() {
   const [cameraFilter, setCameraFilter] = useState('all');
   const [zoomLevel, setZoomLevel] = useState<'hourly' | 'daily' | 'weekly'>('daily');
   const [selectedEvent, setSelectedEvent] = useState<BehaviorEvent | null>(null);
+  const [use24HourFormat, setUse24HourFormat] = useState(false);
 
   // Sync behavior filter from URL
   useEffect(() => {
@@ -118,11 +118,11 @@ export function TimelinePage() {
 
       // Time of day filter (using zoo timezone)
       const hour = getZooHour(event.start_timestamp);
-      const timeOfDay = 
-        hour >= 6 && hour < 12 ? 'morning' :
-        hour >= 12 && hour < 18 ? 'afternoon' :
-        hour >= 18 ? 'evening' : 'night';
-      
+      const timeOfDay =
+        hour >= 5 && hour < 12 ? 'morning' :
+          hour >= 12 && hour < 17 ? 'afternoon' :
+            hour >= 17 && hour < 20 ? 'evening' : 'night';
+
       if (!filters.time_of_day.includes(timeOfDay)) return false;
 
       return true;
@@ -237,14 +237,24 @@ export function TimelinePage() {
 
             {/* Time of Day */}
             <div>
-              <label className="text-sm font-medium text-charcoal block mb-3">Time of Day</label>
+              <div className="flex items-center justify-between mb-3">
+                <label className="text-sm font-medium text-charcoal">Time of Day</label>
+                <button
+                  onClick={() => setUse24HourFormat(!use24HourFormat)}
+                  className="text-xs text-primary hover:text-primary-dark"
+                >
+                  {use24HourFormat ? '12h' : '24h'}
+                </button>
+              </div>
               <div className="grid grid-cols-2 gap-2">
-                {timeOfDayOptions.map(({ key, label, icon: Icon }) => {
+                {timeOfDayOptions.map(({ key, label, icon: Icon, range12, range24 }) => {
                   const isSelected = filters.time_of_day.includes(key);
+                  const timeRange = use24HourFormat ? range24 : range12;
                   return (
                     <button
                       key={key}
                       onClick={() => toggleTimeOfDay(key)}
+                      title={timeRange}
                       className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors
                         ${isSelected
                           ? 'bg-primary text-white'
@@ -252,7 +262,12 @@ export function TimelinePage() {
                         }`}
                     >
                       <Icon className="w-4 h-4" />
-                      {label}
+                      <div className="text-left">
+                        <div>{label}</div>
+                        <div className={`text-xs ${isSelected ? 'text-white/80' : 'text-gray-500'}`}>
+                          {timeRange}
+                        </div>
+                      </div>
                     </button>
                   );
                 })}
@@ -304,7 +319,7 @@ export function TimelinePage() {
                 Showing {filteredEvents.length} behavior events
               </p>
             </div>
-            <Tabs value={zoomLevel} onValueChange={(v) => setZoomLevel(v as typeof zoomLevel)}>
+            <Tabs defaultValue="daily" value={zoomLevel} onValueChange={(v) => setZoomLevel(v as typeof zoomLevel)}>
               <TabsList>
                 <TabsTrigger value="hourly">Hourly</TabsTrigger>
                 <TabsTrigger value="daily">Daily</TabsTrigger>

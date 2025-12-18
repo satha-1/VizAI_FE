@@ -107,7 +107,7 @@ export function LoginPage() {
             <rect width="100%" height="100%" fill="url(#grid)" />
           </svg>
         </div>
-        
+
         <div className="relative z-10 flex flex-col justify-center px-10 xl:px-16">
           <div className="mb-6">
             <img src={logoImg} alt="VizAI" className="h-12 mb-3" />
@@ -115,7 +115,7 @@ export function LoginPage() {
               MetroParks Zoo
             </p>
           </div>
-          
+
           <div className="space-y-4">
             {/* <h2 className="text-xl xl:text-2xl font-semibold text-white">
               Giant Anteater Monitoring

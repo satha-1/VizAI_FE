@@ -1,10 +1,10 @@
-import { 
-  BehaviorEvent, 
-  BehaviorType, 
-  DashboardSummary, 
-  Animal, 
+import {
+  BehaviorEvent,
+  BehaviorType,
+  DashboardSummary,
+  Animal,
   HourlyHeatmapData,
-  BehaviorSummary 
+  BehaviorSummary
 } from '../types';
 import { getZooHour } from '../utils/timezone';
 
@@ -21,7 +21,7 @@ export const formatDuration = (seconds: number): string => {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
   const secs = seconds % 60;
-  
+
   if (hours > 0) {
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   }
@@ -52,7 +52,7 @@ export const generateMockBehaviorEvents = (
     const start = randomDateInRange(startDate, endDate);
     const durationSeconds = Math.floor(Math.random() * 600) + 30; // 30s to 10min
     const end = new Date(start.getTime() + durationSeconds * 1000);
-    
+
     events.push({
       id: generateId(),
       behavior_type: behaviors[Math.floor(Math.random() * behaviors.length)],
@@ -70,7 +70,7 @@ export const generateMockBehaviorEvents = (
     });
   }
 
-  return events.sort((a, b) => 
+  return events.sort((a, b) =>
     new Date(b.start_timestamp).getTime() - new Date(a.start_timestamp).getTime()
   );
 };
@@ -164,9 +164,9 @@ export const mockUser = {
 export const getDateRangeFromPreset = (preset: string): { startDate: Date; endDate: Date } => {
   const endDate = new Date();
   endDate.setHours(23, 59, 59, 999);
-  
+
   let startDate = new Date();
-  
+
   switch (preset) {
     case 'today':
       startDate.setHours(0, 0, 0, 0);
@@ -183,7 +183,7 @@ export const getDateRangeFromPreset = (preset: string): { startDate: Date; endDa
       startDate.setDate(startDate.getDate() - 7);
       startDate.setHours(0, 0, 0, 0);
   }
-  
+
   return { startDate, endDate };
 };
 

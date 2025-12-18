@@ -71,11 +71,13 @@ export function DashboardPage() {
   };
 
   // Prepare chart data
-  const behaviorCountData = summary?.behaviors.map((b) => ({
-    name: b.behavior_type,
-    count: b.count,
-    fill: behaviorColors[b.behavior_type],
-  })) || [];
+  const behaviorCountData = summary?.behaviors
+    .filter((b) => b.behavior_type === 'Scratching' || b.behavior_type === 'Self-directed')
+    .map((b) => ({
+      name: b.behavior_type,
+      count: b.count,
+      fill: behaviorColors[b.behavior_type],
+    })) || [];
 
   const durationData = summary?.behaviors.map((b) => ({
     name: b.behavior_type,
@@ -413,18 +415,18 @@ function HeatmapChart({ data }: HeatmapProps) {
   const getColor = (behavior: BehaviorType, intensity: number): string => {
     const baseColor = behaviorColors[behavior];
     if (intensity === 0) return '#F3F4F6';
-    
+
     // Convert hex to RGB and apply intensity
     const r = parseInt(baseColor.slice(1, 3), 16);
     const g = parseInt(baseColor.slice(3, 5), 16);
     const b = parseInt(baseColor.slice(5, 7), 16);
-    
+
     // Mix with white based on intensity
     const mix = 1 - intensity * 0.8;
     const newR = Math.round(r + (255 - r) * mix);
     const newG = Math.round(g + (255 - g) * mix);
     const newB = Math.round(b + (255 - b) * mix);
-    
+
     return `rgb(${newR}, ${newG}, ${newB})`;
   };
 
@@ -454,7 +456,7 @@ function HeatmapChart({ data }: HeatmapProps) {
               {hours.map((hour) => {
                 const intensity = getIntensity(behavior, hour);
                 const cellData = getCellData(behavior, hour);
-                
+
                 return (
                   <div
                     key={hour}

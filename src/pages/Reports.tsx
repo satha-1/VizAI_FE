@@ -234,7 +234,7 @@ export function ReportsPage() {
             <Button
               variant="secondary"
               className="w-full"
-              onClick={() => {}}
+              onClick={() => { }}
             >
               Preview Report
             </Button>
