@@ -120,9 +120,9 @@ export function LoginPage() {
             {/* <h2 className="text-xl xl:text-2xl font-semibold text-white">
               Giant Anteater Monitoring
             </h2> */}
-            {/* <p className="text-base text-white/80 max-w-md">
+            <p className="text-base text-white/80 max-w-md">
               Advanced behavior analysis and welfare monitoring powered by computer vision and AI.
-            </p> */}
+            </p>
           </div>
 
           <div className="mt-8 opacity-80">
