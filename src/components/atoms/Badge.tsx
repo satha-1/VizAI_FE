@@ -67,12 +67,14 @@ export const Badge = forwardRef<HTMLSpanElement, BadgeProps>(
 Badge.displayName = 'Badge';
 
 // Status Badge specifically for animal status
-type StatusType = 'Active' | 'Resting' | 'Alert';
+type StatusType = 'Active' | 'Coming Soon' | 'Deleted' | 'Resting' | 'Feeding';
 
 const statusVariants: Record<StatusType, BadgeVariant> = {
   Active: 'success',
+  'Coming Soon': 'info',
+  Deleted: 'danger',
   Resting: 'info',
-  Alert: 'warning',
+  Feeding: 'accent',
 };
 
 interface StatusBadgeProps extends Omit<BadgeProps, 'variant'> {

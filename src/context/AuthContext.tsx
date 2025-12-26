@@ -1,6 +1,5 @@
 import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 import { User } from '../types';
-import { mockUser } from '../api/mockData';
 
 interface AuthContextType {
   user: User | null;
@@ -26,8 +25,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Simulate API call
     await new Promise(resolve => setTimeout(resolve, 1000));
     
-    // For demo, always succeed with mock user
-    const authenticatedUser = { ...mockUser, email: _email };
+    // For demo, always succeed with a generic user structure
+    const authenticatedUser: User = {
+      id: 'user-001',
+      name: 'Demo User',
+      email: _email,
+      avatar_url: undefined,
+      role: 'Researcher' as const,
+    };
     setUser(authenticatedUser);
     sessionStorage.setItem('vizai_user', JSON.stringify(authenticatedUser));
     setIsLoading(false);

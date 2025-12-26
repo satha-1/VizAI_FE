@@ -4,5 +4,6 @@ export { AnimalSelectionPage } from './AnimalSelection';
 export { DashboardPage } from './Dashboard';
 export { TimelinePage } from './Timeline';
 export { ReportsPage } from './Reports';
+export { ProfilePage } from './Profile';
 export { ChatPage } from './Chat';
 

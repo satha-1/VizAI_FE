@@ -26,6 +26,7 @@ export function MainLayout() {
         '1': '/animals/giant-anteater/dashboard',
         '2': '/animals/giant-anteater/timeline',
         '3': '/animals/giant-anteater/reports',
+        '4': '/animals/giant-anteater/profile',
       };
 
       const path = shortcuts[e.key];

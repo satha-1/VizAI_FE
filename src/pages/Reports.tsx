@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import {
   BarChart,
   Bar,
@@ -32,9 +33,9 @@ import { Modal } from '../components/atoms/Modal';
 import { Dropdown } from '../components/molecules/Dropdown';
 import { useToast } from '../components/molecules/Toast';
 import { useDateRange } from '../context/DateRangeContext';
-import { useGenerateReport, useBehaviorSummary } from '../api/hooks';
-import { ReportType, BehaviorType, ExportFormat } from '../types';
-import { behaviorColors, formatDuration } from '../api/mockData';
+import { useGenerateReport, useBehaviorSummary, useBehaviorEvents } from '../api/hooks';
+import { ReportType, BehaviorType, BehaviorEvent } from '../types';
+import { behaviorColors, formatDuration, getBehaviorColor } from '../utils/formatting';
 
 const reportTypes = [
   { value: 'daily_summary', label: 'Daily Behavior Summary', icon: Calendar },
@@ -43,17 +44,67 @@ const reportTypes = [
   { value: 'welfare_assessment', label: 'Welfare Assessment Report', icon: Shield },
 ];
 
-const behaviors: BehaviorType[] = ['Pacing', 'Recumbent', 'Scratching', 'Self-directed'];
-
 export function ReportsPage() {
+  const { animalId: routeAnimalId } = useParams<{ animalId: string }>();
+  const animalId = routeAnimalId || 'giant-anteater'; // Fallback for backward compatibility
   const { dateRange, formatDateRange } = useDateRange();
   const { showToast } = useToast();
-  const generateReportMutation = useGenerateReport();
+  const generateReportMutation = useGenerateReport(animalId);
+
+  // Get summary data for preview
+  const { data: summary } = useBehaviorSummary(
+    dateRange.preset,
+    dateRange.startDate,
+    dateRange.endDate,
+    true,
+    animalId
+  );
+
+  // Get available behaviors from summary (dynamic from database)
+  const availableBehaviors = useMemo(() => {
+    if (summary?.behaviors && summary.behaviors.length > 0) {
+      return summary.behaviors.map(b => b.behavior_type);
+    }
+    // Fallback to default behaviors if summary not loaded yet
+    return ['Pacing', 'Recumbent', 'Scratching', 'Self-directed'] as BehaviorType[];
+  }, [summary]);
 
   // Form state
   const [reportType, setReportType] = useState<ReportType>('daily_summary');
-  const [selectedBehaviors, setSelectedBehaviors] = useState<BehaviorType[]>(behaviors);
-  const [specificBehavior, setSpecificBehavior] = useState<BehaviorType>('Pacing');
+  const [selectedBehaviors, setSelectedBehaviors] = useState<BehaviorType[]>([]);
+  const [specificBehavior, setSpecificBehavior] = useState<BehaviorType | undefined>(undefined);
+
+  // Initialize selectedBehaviors and specificBehavior when availableBehaviors loads
+  useEffect(() => {
+    if (availableBehaviors.length > 0) {
+      setSelectedBehaviors(prev => {
+        // If no behaviors selected, select all available behaviors
+        if (prev.length === 0) {
+          return [...availableBehaviors];
+        }
+        // Filter out any selected behaviors that are no longer available
+        const validSelected = prev.filter(b => availableBehaviors.includes(b));
+        return validSelected.length > 0 ? validSelected : [...availableBehaviors];
+      });
+      
+      // If specificBehavior is not set or not in availableBehaviors, set to first available
+      setSpecificBehavior(prev => {
+        if (!prev || !availableBehaviors.includes(prev)) {
+          return availableBehaviors[0];
+        }
+        return prev;
+      });
+    }
+  }, [availableBehaviors]);
+
+  // Get events data for behavior-specific preview
+  const { data: events } = useBehaviorEvents(
+    dateRange.startDate,
+    dateRange.endDate,
+    undefined,
+    true,
+    animalId
+  );
   const [showDurationChart, setShowDurationChart] = useState(true);
   const [showCountChart, setShowCountChart] = useState(true);
   const [includeCompliance, setIncludeCompliance] = useState(true);
@@ -61,27 +112,56 @@ export function ReportsPage() {
 
   // Export modal
   const [showExportModal, setShowExportModal] = useState(false);
-  const [selectedFormat, setSelectedFormat] = useState<ExportFormat | null>(null);
-  const [generatedReportUrl, setGeneratedReportUrl] = useState<string | null>(null);
+  const [generatedReport, setGeneratedReport] = useState<{ download_url: string; report_id: string; count: number } | null>(null);
 
-  // Get summary data for preview
-  const { data: summary } = useBehaviorSummary(
-    dateRange.preset,
-    dateRange.startDate,
-    dateRange.endDate
-  );
+  /**
+   * Download report using ONLY the `download_url` returned by the generate API.
+   *
+   * IMPORTANT:
+   * - We do NOT call any frontend "download report API" wrapper.
+   * - We do NOT fetch() the file (avoids CORS/preflight issues).
+   * - We simply navigate/open the `download_url` so the browser downloads it.
+   */
+  const downloadReportFile = (downloadUrl: string, format: 'csv') => {
+    if (!downloadUrl) {
+      showToast('error', 'No report URL available');
+      return;
+    }
 
-  const toggleBehavior = (behavior: BehaviorType) => {
+    // IMPORTANT: Backend is returning CSV by default, so ALWAYS specify format explicitly.
+    const formatParam = format === 'csv' ? 'csv' : 'csv';
+    const urlToOpen = downloadUrl.includes('?')
+      ? `${downloadUrl}&format=${formatParam}`
+      : `${downloadUrl}?format=${formatParam}`;
+
+    // Use a normal navigation/open so browser handles the download.
+    // This avoids CORS issues that happen with fetch + Authorization header.
+    window.open(urlToOpen, '_blank', 'noopener,noreferrer');
+  };
+
+  /**
+   * Backend currently returns CSV even when requesting PDF.
+   * So PDF export is implemented as **Print to PDF** of the report preview.
+   * (User can choose "Save as PDF" in the browser print dialog.)
+   */
+  const exportPdfFromPreview = () => {
+    // Close modal so it doesn't appear in the PDF
+    setShowExportModal(false);
+    showToast('info', 'In the print dialog, choose "Save as PDF".');
+    // Give the UI a moment to close the modal before printing
+    setTimeout(() => window.print(), 150);
+  };
+
+  const toggleBehavior = (behavior: string) => {
     setSelectedBehaviors((prev) =>
-      prev.includes(behavior)
+      prev.includes(behavior as BehaviorType)
         ? prev.filter((b) => b !== behavior)
-        : [...prev, behavior]
+        : [...prev, behavior as BehaviorType]
     );
   };
 
-  const handleGenerateReport = async (format: ExportFormat) => {
-    setSelectedFormat(format);
-    setGeneratedReportUrl(null);
+  const handleGenerateReport = async () => {
+    setGeneratedReport(null);
 
     try {
       const result = await generateReportMutation.mutateAsync({
@@ -98,11 +178,17 @@ export function ReportsPage() {
             specific_behavior: reportType === 'behavior_specific' ? specificBehavior : undefined,
           },
         },
-        format,
+        // Format isn't used by backend generate; we choose a stable default.
+        format: 'excel',
       });
 
-      setGeneratedReportUrl(result.download_url);
-      showToast('success', 'Report generated successfully!');
+      // Store the full report response
+      setGeneratedReport({
+        download_url: result.download_url,
+        report_id: result.report_id,
+        count: result.count || 0,
+      });
+      showToast('success', `Report generated successfully! ${result.count || 0} records included.`);
     } catch {
       showToast('error', 'Failed to generate report. Please try again.');
     }
@@ -110,6 +196,15 @@ export function ReportsPage() {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* Print styles: only print the report preview */}
+      <style>{`
+        @media print {
+          body * { visibility: hidden !important; }
+          #report-print-root, #report-print-root * { visibility: visible !important; }
+          #report-print-root { position: absolute; left: 0; top: 0; width: 100%; }
+          #report-print-root { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        }
+      `}</style>
       {/* Configuration Panel */}
       <Card className="lg:col-span-1">
         <CardHeader>
@@ -146,24 +241,27 @@ export function ReportsPage() {
               Include Behaviors
             </label>
             <div className="space-y-2">
-              {behaviors.map((behavior) => (
-                <label
-                  key={behavior}
-                  className="flex items-center gap-2 cursor-pointer"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedBehaviors.includes(behavior)}
-                    onChange={() => toggleBehavior(behavior)}
-                    className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
-                  />
-                  <span
-                    className="w-3 h-3 rounded-full"
-                    style={{ backgroundColor: behaviorColors[behavior] }}
-                  />
-                  <span className="text-sm text-charcoal">{behavior}</span>
-                </label>
-              ))}
+              {availableBehaviors.map((behavior) => {
+                const behaviorColor = getBehaviorColor(behavior);
+                return (
+                  <label
+                    key={behavior}
+                    className="flex items-center gap-2 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedBehaviors.includes(behavior as BehaviorType)}
+                      onChange={() => toggleBehavior(behavior)}
+                      className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                    />
+                    <span
+                      className="w-3 h-3 rounded-full"
+                      style={{ backgroundColor: behaviorColor }}
+                    />
+                    <span className="text-sm text-charcoal">{behavior}</span>
+                  </label>
+                );
+              })}
             </div>
           </div>
 
@@ -171,8 +269,8 @@ export function ReportsPage() {
           {reportType === 'behavior_specific' && (
             <Dropdown
               label="Specific Behavior"
-              options={behaviors.map((b) => ({ value: b, label: b }))}
-              value={specificBehavior}
+              options={availableBehaviors.map((b) => ({ value: b, label: b }))}
+              value={specificBehavior || ''}
               onChange={(v) => setSpecificBehavior(v as BehaviorType)}
             />
           )}
@@ -240,7 +338,10 @@ export function ReportsPage() {
             </Button>
             <Button
               className="w-full"
-              onClick={() => setShowExportModal(true)}
+              onClick={() => {
+                setShowExportModal(true);
+                handleGenerateReport();
+              }}
               leftIcon={<Download className="w-4 h-4" />}
             >
               Generate Report
@@ -258,7 +359,10 @@ export function ReportsPage() {
           </Badge>
         </CardHeader>
         <CardContent>
-          <div className="border border-gray-200 rounded-xl bg-white p-6 max-h-[600px] overflow-y-auto scrollbar-thin">
+          <div
+            id="report-print-root"
+            className="border border-gray-200 rounded-xl bg-white p-6 max-h-[600px] overflow-y-auto scrollbar-thin"
+          >
             {/* Report Header */}
             <div className="text-center mb-8 pb-6 border-b border-gray-200">
               <h2 className="text-2xl font-bold text-charcoal mb-2">
@@ -279,13 +383,16 @@ export function ReportsPage() {
                 summary={summary}
                 showDuration={showDurationChart}
                 showCount={showCountChart}
+                startDate={dateRange.startDate}
+                endDate={dateRange.endDate}
               />
             )}
 
-            {reportType === 'behavior_specific' && (
+            {reportType === 'behavior_specific' && specificBehavior && (
               <BehaviorSpecificPreview
                 summary={summary}
                 behavior={specificBehavior}
+                events={events}
               />
             )}
 
@@ -304,56 +411,63 @@ export function ReportsPage() {
         isOpen={showExportModal}
         onClose={() => {
           setShowExportModal(false);
-          setSelectedFormat(null);
-          setGeneratedReportUrl(null);
+          setGeneratedReport(null);
         }}
         title="Export Report"
         size="sm"
       >
         <div className="p-6 space-y-4">
-          {!selectedFormat ? (
-            <>
-              <p className="text-sm text-gray-600 mb-4">
-                Choose an export format for your report
-              </p>
-              <div className="space-y-2">
-                {(['pdf', 'excel', 'powerpoint'] as ExportFormat[]).map((format) => (
-                  <button
-                    key={format}
-                    onClick={() => handleGenerateReport(format)}
-                    className="w-full flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:border-primary hover:bg-primary/5 transition-colors"
-                  >
-                    <span className="font-medium text-charcoal capitalize">{format}</span>
-                    <Download className="w-5 h-5 text-gray-400" />
-                  </button>
-                ))}
-              </div>
-            </>
-          ) : (
-            <div className="text-center py-4">
-              {generateReportMutation.isPending ? (
-                <>
-                  <Loader2 className="w-12 h-12 text-primary animate-spin mx-auto mb-4" />
-                  <p className="text-charcoal font-medium">Generating your report...</p>
-                  <p className="text-sm text-gray-500 mt-1">This may take a few moments</p>
-                </>
-              ) : generatedReportUrl ? (
-                <>
-                  <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-4" />
-                  <p className="text-charcoal font-medium mb-4">Report generated!</p>
+          <div className="text-center py-4">
+            {generateReportMutation.isPending ? (
+              <>
+                <Loader2 className="w-12 h-12 text-primary animate-spin mx-auto mb-4" />
+                <p className="text-charcoal font-medium">Generating your report...</p>
+                <p className="text-sm text-gray-500 mt-1">This may take a few moments</p>
+              </>
+            ) : generatedReport ? (
+              <>
+                <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-4" />
+                <p className="text-charcoal font-medium mb-2">Report generated!</p>
+                <p className="text-sm text-gray-500 mb-4">{generatedReport.count} records included</p>
+
+                <div className="space-y-2">
                   <Button
                     className="w-full"
-                    onClick={() => {
-                      showToast('info', 'Download would start here in production');
-                    }}
+                    onClick={() => exportPdfFromPreview()}
                     leftIcon={<Download className="w-4 h-4" />}
                   >
-                    Download {selectedFormat.toUpperCase()}
+                    Save as PDF
                   </Button>
-                </>
-              ) : null}
-            </div>
-          )}
+
+                  <Button
+                    className="w-full"
+                    variant="secondary"
+                    onClick={() => downloadReportFile(generatedReport.download_url, 'csv')}
+                    leftIcon={<Download className="w-4 h-4" />}
+                  >
+                    Download CSV (Excel)
+                  </Button>
+
+                  <Button
+                    className="w-full"
+                    variant="ghost"
+                    onClick={() => handleGenerateReport()}
+                  >
+                    Generate again
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-gray-600 mb-4">
+                  Click generate to create the report, then download as CSV or save as PDF.
+                </p>
+                <Button className="w-full" onClick={() => handleGenerateReport()}>
+                  Generate now
+                </Button>
+              </>
+            )}
+          </div>
         </div>
       </Modal>
     </div>
@@ -433,26 +547,29 @@ function DailySummaryPreview({ summary }: { summary?: ReturnType<typeof useBehav
 
 // Trend Report Preview Component
 function TrendReportPreview({
-  summary: _summary,
+  summary,
   showDuration,
   showCount,
+  startDate,
+  endDate: _endDate,
 }: {
   summary?: ReturnType<typeof useBehaviorSummary>['data'];
   showDuration: boolean;
   showCount: boolean;
+  startDate: string;
+  endDate: string;
 }) {
-  // Generate mock trend data
-  const trendData = Array.from({ length: 7 }, (_, i) => {
-    const date = new Date();
-    date.setDate(date.getDate() - (6 - i));
-    return {
-      date: date.toLocaleDateString('en-US', { weekday: 'short' }),
-      Pacing: Math.floor(Math.random() * 15) + 5,
-      Recumbent: Math.floor(Math.random() * 20) + 10,
-      Scratching: Math.floor(Math.random() * 10) + 2,
-      'Self-directed': Math.floor(Math.random() * 8) + 3,
-    };
-  });
+  // Use real data from summary - show current summary data
+  // For trend data, we would need daily breakdown from API
+  // For now, show summary data as a single data point
+  // Build trend data dynamically from available behaviors in summary
+  const trendData = summary ? [{
+    date: new Date(startDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
+    ...summary.behaviors.reduce((acc, b) => {
+      acc[b.behavior_type] = b.count;
+      return acc;
+    }, {} as Record<string, number>),
+  }] : [];
 
   return (
     <div className="space-y-8">
@@ -512,18 +629,24 @@ function TrendReportPreview({
 function BehaviorSpecificPreview({
   summary,
   behavior,
+  events,
 }: {
   summary?: ReturnType<typeof useBehaviorSummary>['data'];
   behavior: BehaviorType;
+  events?: BehaviorEvent[];
 }) {
   const behaviorData = summary?.behaviors.find((b) => b.behavior_type === behavior);
 
-  // Mock occurrence data
-  const occurrences = Array.from({ length: 5 }, (_, i) => ({
-    id: i + 1,
-    timestamp: new Date(Date.now() - Math.random() * 86400000 * 7).toLocaleString(),
-    duration: Math.floor(Math.random() * 600) + 30,
-  }));
+  // Use real occurrence data from events
+  const occurrences = events
+    ?.filter(e => e.behavior_type === behavior)
+    .slice(0, 10) // Show top 10 most recent
+    .sort((a, b) => new Date(b.start_timestamp).getTime() - new Date(a.start_timestamp).getTime())
+    .map((event, index) => ({
+      id: event.id || `event-${index}`,
+      timestamp: new Date(event.start_timestamp).toLocaleString(),
+      duration: event.duration_seconds,
+    })) || [];
 
   return (
     <div className="space-y-8">

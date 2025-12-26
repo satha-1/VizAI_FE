@@ -1,9 +1,19 @@
-// Behavior Types
-export type BehaviorType = 'Pacing' | 'Recumbent' | 'Scratching' | 'Self-directed';
+// Behavior Types - dynamically determined from API, but we need a base type
+// The actual types will be determined from the API response
+export type BehaviorType = string; // Made dynamic to support any behavior from API
 
 export interface BehaviorEvent {
   id: string;
   behavior_type: BehaviorType;
+  /**
+   * Raw behavior string exactly as returned by backend timeline API.
+   * Example: "PACING_START", "PACING_STOPPED", "NON-RECUMBENT"
+   */
+  raw_behavior_type?: string;
+  /**
+   * Raw video URL exactly as returned by backend (often s3://...)
+   */
+  raw_video_url?: string;
   start_timestamp: string; // ISO 8601
   end_timestamp: string;
   duration_seconds: number;
@@ -51,9 +61,21 @@ export interface Animal {
   age: number;
   sex: 'Male' | 'Female';
   enclosure: string;
-  status: 'Active' | 'Resting' | 'Alert';
+  status: 'Active' | 'Coming Soon' | 'Deleted' | 'Resting' | 'Feeding';
   last_updated: string;
   image_url?: string;
+  // Additional fields from backend
+  animal_id?: string;
+  animal_name?: string;
+  animal_description?: string;
+  date_of_birth?: string;
+  gender?: string; // Backend uses "FeMale" format
+  environment_id?: string;
+  environment_description?: string;
+  animal_created_at?: string;
+  animal_modified_at?: string;
+  environment_created_at?: string;
+  environment_modified_at?: string;
 }
 
 // Report Types
@@ -80,11 +102,15 @@ export interface ReportConfig {
 }
 
 export interface GeneratedReport {
-  id: string;
-  config: ReportConfig;
-  generated_at: string;
+  report_id: string;
   download_url: string;
-  format: ExportFormat;
+  count: number;
+  status: string;
+  // Legacy fields for backward compatibility
+  id?: string;
+  config?: ReportConfig;
+  generated_at?: string;
+  format?: ExportFormat;
 }
 
 // Chat Types

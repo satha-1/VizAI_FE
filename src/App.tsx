@@ -8,6 +8,7 @@ import {
   DashboardPage,
   TimelinePage,
   ReportsPage,
+  ProfilePage,
 } from './pages';
 import { useAuth } from './context/AuthContext';
 
@@ -65,9 +66,9 @@ function App() {
           }
         />
 
-        {/* Giant Anteater routes with MainLayout */}
+        {/* Animal routes with MainLayout - dynamic animal ID */}
         <Route
-          path="/animals/giant-anteater"
+          path="/animals/:animalId"
           element={
             <ProtectedRoute>
               <MainLayout />
@@ -78,6 +79,7 @@ function App() {
           <Route path="dashboard" element={<DashboardPage />} />
           <Route path="timeline" element={<TimelinePage />} />
           <Route path="reports" element={<ReportsPage />} />
+          <Route path="profile" element={<ProfilePage />} />
         </Route>
 
         {/* Default redirect - go to register first */}

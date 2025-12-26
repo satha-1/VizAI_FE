@@ -23,39 +23,52 @@ import { AnimalProfileCard } from '../components/organisms/AnimalProfileCard';
 import { useBehaviorSummary, useAnimal, useBehaviorEvents } from '../api/hooks';
 import { useDateRange } from '../context/DateRangeContext';
 import { useToast } from '../components/molecules/Toast';
-import { behaviorColors, formatDuration } from '../api/mockData';
+import { getBehaviorColor, formatDuration } from '../utils/formatting';
 import { BehaviorType, BehaviorEvent } from '../types';
 import { useState, useRef, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import { BarChart3, PieChartIcon, Calendar, ArrowLeft, Clock, Camera, Footprints, Bed, Hand, User, Play, Video } from 'lucide-react';
 import { formatTimestampForTimeline, formatTimestampFull } from '../utils/timezone';
 
-const behaviorIcons: Record<BehaviorType, typeof Footprints> = {
+const behaviorIcons: Record<string, typeof Footprints> = {
   Pacing: Footprints,
   Recumbent: Bed,
   Scratching: Hand,
   'Self-directed': User,
 };
 
+const getBehaviorIcon = (behavior: string): typeof Footprints => {
+  return behaviorIcons[behavior] || Footprints;
+};
+
 export function DashboardPage() {
+  const { animalId: routeAnimalId } = useParams<{ animalId: string }>();
+  const animalId = routeAnimalId || 'giant-anteater'; // Fallback for backward compatibility
   const { dateRange } = useDateRange();
   const { showToast: _showToast } = useToast();
   const [durationView, setDurationView] = useState<'bar' | 'pie'>('bar');
   const [selectedBehavior, setSelectedBehavior] = useState<BehaviorType | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<BehaviorEvent | null>(null);
 
-  const { data: animal, isLoading: isLoadingAnimal } = useAnimal('giant-anteater');
+  const { data: animal, isLoading: isLoadingAnimal } = useAnimal(animalId);
   const { data: summary, isLoading: isLoadingSummary, error, refetch } = useBehaviorSummary(
     dateRange.preset,
     dateRange.startDate,
-    dateRange.endDate
+    dateRange.endDate,
+    true,
+    animalId
   );
+  
+  // Note: Date range is initialized from timeline API via DateRangeContext's fetchDateRange()
+  // which extracts start_date and end_date from the timeline API response
 
   // Fetch events for selected behavior
   const { data: behaviorEvents, isLoading: isLoadingEvents } = useBehaviorEvents(
     dateRange.startDate,
     dateRange.endDate,
     selectedBehavior || undefined,
-    !!selectedBehavior
+    !!selectedBehavior,
+    animalId
   );
 
   const handleBarClick = (behavior: BehaviorType) => {
@@ -70,20 +83,32 @@ export function DashboardPage() {
     setSelectedEvent(event);
   };
 
-  // Prepare chart data
+  // Prepare chart data - show all behaviors from summary
   const behaviorCountData = summary?.behaviors
-    .filter((b) => b.behavior_type === 'Scratching' || b.behavior_type === 'Self-directed')
-    .map((b) => ({
+    ?.map((b) => ({
       name: b.behavior_type,
       count: b.count,
-      fill: behaviorColors[b.behavior_type],
+      fill: getBehaviorColor(b.behavior_type),
     })) || [];
+  
+  // Debug logging
+  useEffect(() => {
+    if (summary) {
+      console.log('📊 Dashboard Summary:', {
+        total_behaviors: summary.total_behaviors,
+        behaviors_count: summary.behaviors?.length,
+        behaviors: summary.behaviors?.map(b => ({ type: b.behavior_type, count: b.count })),
+        heatmap_entries: summary.hourly_heatmap?.length,
+      });
+      console.log('📊 Behavior Count Data for chart:', behaviorCountData);
+    }
+  }, [summary, behaviorCountData]);
 
   const durationData = summary?.behaviors.map((b) => ({
     name: b.behavior_type,
     duration: b.total_duration_seconds,
     percentage: b.percentage_of_total,
-    fill: behaviorColors[b.behavior_type],
+    fill: getBehaviorColor(b.behavior_type),
   })) || [];
 
   const totalDuration = summary?.total_monitored_seconds || 0;
@@ -127,8 +152,8 @@ export function DashboardPage() {
                   </Button>
                   <div className="flex items-center gap-2">
                     {(() => {
-                      const Icon = behaviorIcons[selectedBehavior];
-                      return <Icon className="w-5 h-5" style={{ color: behaviorColors[selectedBehavior] }} />;
+                      const Icon = getBehaviorIcon(selectedBehavior);
+                      return <Icon className="w-5 h-5" style={{ color: getBehaviorColor(selectedBehavior) }} />;
                     })()}
                     <CardTitle>{selectedBehavior} Events</CardTitle>
                   </div>
@@ -191,7 +216,12 @@ export function DashboardPage() {
                       <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
                       <XAxis
                         dataKey="name"
+                        interval={0}
+                        angle={-25}
+                        textAnchor="end"
+                        height={60}
                         tick={{ fontSize: 12, fill: '#374151' }}
+                        minTickGap={0}
                         tickLine={false}
                         axisLine={{ stroke: '#E5E7EB' }}
                       />
@@ -397,7 +427,9 @@ interface HeatmapProps {
 }
 
 function HeatmapChart({ data }: HeatmapProps) {
-  const behaviors: BehaviorType[] = ['Pacing', 'Recumbent', 'Scratching', 'Self-directed'];
+  const behaviors: BehaviorType[] = Array.from(
+    new Set(data.map((d) => d.behavior_type))
+  ).sort((a, b) => String(a).localeCompare(String(b)));
   const hours = Array.from({ length: 24 }, (_, i) => i);
 
   // Find max count for scaling
@@ -413,8 +445,8 @@ function HeatmapChart({ data }: HeatmapProps) {
   };
 
   const getColor = (behavior: BehaviorType, intensity: number): string => {
-    const baseColor = behaviorColors[behavior];
-    if (intensity === 0) return '#F3F4F6';
+    const baseColor = getBehaviorColor(behavior);
+    if (intensity === 0) return '#F9FAFB'; // Off White from palette
 
     // Convert hex to RGB and apply intensity
     const r = parseInt(baseColor.slice(1, 3), 16);
@@ -498,8 +530,8 @@ interface BehaviorEventItemProps {
 }
 
 function BehaviorEventItem({ event, onView }: BehaviorEventItemProps & { onView: (event: BehaviorEvent) => void }) {
-  const Icon = behaviorIcons[event.behavior_type];
-  const color = behaviorColors[event.behavior_type];
+  const Icon = getBehaviorIcon(event.behavior_type);
+  const color = getBehaviorColor(event.behavior_type);
 
   return (
     <div className="flex gap-3 p-3 border border-gray-100 rounded-lg hover:border-gray-200 hover:shadow-sm transition-all">
@@ -718,7 +750,7 @@ function VideoModal({ event, relatedEvents, onClose }: VideoModalProps) {
                 <h4 className="text-sm font-medium text-charcoal mb-3">Related Behaviors</h4>
                 <div className="space-y-2">
                   {relatedEvents.map((related) => {
-                    const Icon = behaviorIcons[related.behavior_type];
+                    const Icon = getBehaviorIcon(related.behavior_type);
                     return (
                       <div
                         key={related.id}
@@ -726,7 +758,7 @@ function VideoModal({ event, relatedEvents, onClose }: VideoModalProps) {
                       >
                         <Icon
                           className="w-4 h-4"
-                          style={{ color: behaviorColors[related.behavior_type] }}
+                          style={{ color: getBehaviorColor(related.behavior_type) }}
                         />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm text-charcoal truncate">

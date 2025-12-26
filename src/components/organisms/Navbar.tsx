@@ -1,30 +1,61 @@
-import { useState, useRef, useEffect } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
-import { ChevronDown, ChevronRight, LayoutDashboard, Clock, FileText } from 'lucide-react';
+import { useState, useRef, useEffect, useMemo } from 'react';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { ChevronDown, ChevronRight, LayoutDashboard, Clock, FileText, User } from 'lucide-react';
 import logoImg from '../../assets/logo.png';
 import { DateRangePicker } from '../molecules/DateRangePicker';
 import { UserMenu } from '../molecules/UserMenu';
+import { useAllAnimals } from '../../api/hooks';
 
 interface NavbarProps {
   className?: string;
 }
 
-const tabs = [
-  { path: '/animals/giant-anteater/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/animals/giant-anteater/timeline', label: 'Timeline', icon: Clock },
-  { path: '/animals/giant-anteater/reports', label: 'Reports', icon: FileText },
-];
-
-const animals = [
-  { id: 'giant-anteater', name: 'Giant Anteater', available: true },
-  { id: 'red-panda', name: 'Red Panda', available: false },
-  { id: 'sloth', name: 'Sloth', available: false },
+// Tabs will be generated dynamically based on current animal ID
+const getTabs = (animalId: string) => [
+  { path: `/animals/${animalId}/dashboard`, label: 'Dashboard', icon: LayoutDashboard },
+  { path: `/animals/${animalId}/timeline`, label: 'Timeline', icon: Clock },
+  { path: `/animals/${animalId}/reports`, label: 'Reports', icon: FileText },
+  { path: `/animals/${animalId}/profile`, label: 'Profile', icon: User },
 ];
 
 export function Navbar({ className = '' }: NavbarProps) {
   const location = useLocation();
+  const navigate = useNavigate();
   const [animalDropdownOpen, setAnimalDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const { data: allAnimals } = useAllAnimals();
+
+  // Extract animal ID from current route (e.g., /animals/GAE-01/dashboard -> GAE-01)
+  const animalId = useMemo(() => {
+    const match = location.pathname.match(/^\/animals\/([^/]+)/);
+    return match ? match[1] : 'giant-anteater'; // Fallback for backward compatibility
+  }, [location.pathname]);
+
+  const tabs = useMemo(() => getTabs(animalId), [animalId]);
+
+  const animals = useMemo(() => {
+    const raw = Array.isArray(allAnimals) ? allAnimals : [];
+    return raw
+      .filter((a: any) => String(a?.status || '').toUpperCase() !== 'DELETED')
+      .map((a: any) => {
+        const status = String(a?.status || 'ACTIVE').toUpperCase();
+        return {
+          id: String(a?.animal_id || ''),
+          name: String(a?.animal_name || a?.animal_id || 'Unknown'),
+          status,
+          selectable: status === 'ACTIVE',
+        };
+      })
+      .filter((a) => a.id);
+  }, [allAnimals]);
+
+  const currentAnimalLabel = useMemo(() => {
+    const match = animals.find((a) => a.id === animalId);
+    if (match) return match.name;
+    // fallback for older route "/animals/giant-anteater/..."
+    if (animalId === 'giant-anteater') return 'Giant Anteater';
+    return animalId;
+  }, [animals, animalId]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -60,7 +91,7 @@ export function Navbar({ className = '' }: NavbarProps) {
                   onClick={() => setAnimalDropdownOpen(!animalDropdownOpen)}
                   className="flex items-center gap-1 px-2 py-1 rounded-md hover:bg-gray-100 transition-colors focus-ring"
                 >
-                  <span className="font-medium text-charcoal">Giant Anteater</span>
+                  <span className="font-medium text-charcoal">{currentAnimalLabel}</span>
                   <ChevronDown className={`w-4 h-4 transition-transform ${animalDropdownOpen ? 'rotate-180' : ''}`} />
                 </button>
 
@@ -69,16 +100,20 @@ export function Navbar({ className = '' }: NavbarProps) {
                     {animals.map((animal) => (
                       <button
                         key={animal.id}
-                        disabled={!animal.available}
-                        onClick={() => setAnimalDropdownOpen(false)}
+                        disabled={!animal.selectable}
+                        onClick={() => {
+                          if (!animal.selectable) return;
+                          setAnimalDropdownOpen(false);
+                          navigate(`/animals/${animal.id}/dashboard`);
+                        }}
                         className={`w-full text-left px-3 py-2 text-sm ${
-                          animal.available
+                          animal.selectable
                             ? 'text-charcoal hover:bg-gray-50'
                             : 'text-gray-400 cursor-not-allowed'
                         }`}
                       >
                         {animal.name}
-                        {!animal.available && (
+                        {!animal.selectable && (
                           <span className="ml-2 text-xs text-gray-400">(Coming Soon)</span>
                         )}
                       </button>

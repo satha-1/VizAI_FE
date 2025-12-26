@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useSearchParams, useParams } from 'react-router-dom';
 import {
   Filter,
   Play,
@@ -27,17 +27,24 @@ import { ErrorState } from '../components/atoms/ErrorState';
 import { Modal } from '../components/atoms/Modal';
 import { Dropdown } from '../components/molecules/Dropdown';
 import { useToast } from '../components/molecules/Toast';
-import { useBehaviorEvents } from '../api/hooks';
+import { useBehaviorEvents, useBehaviorSummary } from '../api/hooks';
 import { useDateRange } from '../context/DateRangeContext';
 import { BehaviorType, BehaviorEvent, TimelineFilters } from '../types';
-import { behaviorColors, formatDuration } from '../api/mockData';
+import { behaviorColors, formatDuration, getBehaviorColor, isS3Url } from '../utils/formatting';
 import { formatTimestampForTimeline, formatTimestampFull, getZooHour } from '../utils/timezone';
 
-const behaviorIcons: Record<BehaviorType, typeof Footprints> = {
+// Behavior icons - with fallback for any behavior type
+const behaviorIcons: Record<string, typeof Footprints> = {
   Pacing: Footprints,
   Recumbent: Bed,
   Scratching: Hand,
   'Self-directed': User,
+  // Add fallback for any other behavior type
+};
+
+// Helper to get icon for any behavior type
+const getBehaviorIcon = (behavior: string): typeof Footprints => {
+  return behaviorIcons[behavior] || Footprints; // Default to Footprints for unknown behaviors
 };
 
 const timeOfDayOptions = [
@@ -63,19 +70,11 @@ const durationPresets = [
 ];
 
 export function TimelinePage() {
+  const { animalId: routeAnimalId } = useParams<{ animalId: string }>();
+  const animalId = routeAnimalId || 'giant-anteater'; // Fallback for backward compatibility
   const [searchParams] = useSearchParams();
   const { dateRange } = useDateRange();
   const { showToast } = useToast();
-
-  // Filters state
-  const [filters, setFilters] = useState<TimelineFilters>(() => {
-    const behaviorParam = searchParams.get('behavior');
-    return {
-      behaviors: behaviorParam ? [behaviorParam as BehaviorType] : ['Pacing', 'Recumbent', 'Scratching', 'Self-directed'],
-      time_of_day: ['morning', 'afternoon', 'evening', 'night'],
-      camera_source: undefined,
-    };
-  });
 
   const [durationFilter, setDurationFilter] = useState('all');
   const [cameraFilter, setCameraFilter] = useState('all');
@@ -83,29 +82,100 @@ export function TimelinePage() {
   const [selectedEvent, setSelectedEvent] = useState<BehaviorEvent | null>(null);
   const [use24HourFormat, setUse24HourFormat] = useState(false);
 
-  // Sync behavior filter from URL
-  useEffect(() => {
-    const behaviorParam = searchParams.get('behavior');
-    if (behaviorParam) {
-      setFilters(prev => ({
-        ...prev,
-        behaviors: [behaviorParam as BehaviorType],
-      }));
-    }
-  }, [searchParams]);
+  // Fetch summary to get available behaviors dynamically from database
+  const { data: summary } = useBehaviorSummary(
+    dateRange.preset,
+    dateRange.startDate,
+    dateRange.endDate,
+    true,
+    animalId
+  );
 
-  // Fetch data
+  // Get available behaviors from summary (dynamic from database)
+  const availableBehaviors = useMemo(() => {
+    if (summary?.behaviors && summary.behaviors.length > 0) {
+      return summary.behaviors.map(b => b.behavior_type);
+    }
+    // Fallback to default behaviors if summary not loaded yet
+    return ['Pacing', 'Recumbent', 'Scratching', 'Self-directed'] as BehaviorType[];
+  }, [summary]);
+
+  // Filters state - initialize with empty behaviors, will be populated from availableBehaviors
+  const [filters, setFilters] = useState<TimelineFilters>(() => {
+    const behaviorParam = searchParams.get('behavior');
+    return {
+      behaviors: behaviorParam ? [behaviorParam as BehaviorType] : [],
+      time_of_day: ['morning', 'afternoon', 'evening', 'night'],
+      camera_source: undefined,
+    };
+  });
+
+  // Initialize filters with available behaviors
+  useEffect(() => {
+    // Only run when we have available behaviors
+    if (availableBehaviors.length === 0) {
+      return;
+    }
+    
+    const behaviorParam = searchParams.get('behavior');
+    setFilters(prev => {
+      // If URL has behavior param and it's valid, use it
+      if (behaviorParam && availableBehaviors.includes(behaviorParam as BehaviorType)) {
+        // Only update if different
+        if (prev.behaviors.length === 1 && prev.behaviors[0] === behaviorParam) {
+          return prev;
+        }
+        return {
+          ...prev,
+          behaviors: [behaviorParam as BehaviorType],
+        };
+      }
+      
+      // If no behaviors selected, select all available behaviors
+      if (prev.behaviors.length === 0) {
+        return {
+          ...prev,
+          behaviors: [...availableBehaviors],
+        };
+      }
+      
+      // If behaviors exist but some are invalid (not in availableBehaviors), filter them out
+      const validBehaviors = prev.behaviors.filter(b => availableBehaviors.includes(b));
+      if (validBehaviors.length !== prev.behaviors.length) {
+        return {
+          ...prev,
+          behaviors: validBehaviors.length > 0 ? validBehaviors : [...availableBehaviors],
+        };
+      }
+      
+      return prev;
+    });
+  }, [searchParams, availableBehaviors]);
+
+  // Determine if we should fetch a specific behavior type
+  // If only one behavior is selected, fetch it directly from API
+  // Otherwise, fetch all and filter client-side
+  const selectedBehaviorType = filters.behaviors.length === 1 ? filters.behaviors[0] : undefined;
+  
+  // Fetch data - if single behavior selected, fetch only that behavior from API
   const { data: events, isLoading, error, refetch } = useBehaviorEvents(
     dateRange.startDate,
-    dateRange.endDate
+    dateRange.endDate,
+    selectedBehaviorType, // Pass behavior type to API if only one is selected
+    true, // Always enabled
+    animalId // Pass animal ID from route
   );
 
   // Filter events
+  // When single behavior is selected: API already filtered, we just apply other filters (camera, duration, time)
+  // When multiple behaviors selected: API returns all, we filter by behavior type + other filters
   const filteredEvents = useMemo(() => {
     if (!events) return [];
 
     return events.filter((event) => {
       // Behavior filter
+      // If multiple behaviors selected, filter client-side
+      // If single behavior selected, API already filtered, but verify for safety
       if (!filters.behaviors.includes(event.behavior_type)) return false;
 
       // Camera filter
@@ -129,20 +199,19 @@ export function TimelinePage() {
     });
   }, [events, filters, durationFilter, cameraFilter]);
 
-  const toggleBehavior = (behavior: BehaviorType) => {
+  const toggleBehavior = (behavior: string) => {
     setFilters((prev) => ({
       ...prev,
-      behaviors: prev.behaviors.includes(behavior)
+      behaviors: prev.behaviors.includes(behavior as BehaviorType)
         ? prev.behaviors.filter((b) => b !== behavior)
-        : [...prev.behaviors, behavior],
+        : [...prev.behaviors, behavior as BehaviorType],
     }));
   };
 
   const toggleAllBehaviors = () => {
-    const allBehaviors: BehaviorType[] = ['Pacing', 'Recumbent', 'Scratching', 'Self-directed'];
     setFilters((prev) => ({
       ...prev,
-      behaviors: prev.behaviors.length === 4 ? [] : allBehaviors,
+      behaviors: prev.behaviors.length === availableBehaviors.length ? [] : [...availableBehaviors],
     }));
   };
 
@@ -157,7 +226,7 @@ export function TimelinePage() {
 
   const clearFilters = () => {
     setFilters({
-      behaviors: ['Pacing', 'Recumbent', 'Scratching', 'Self-directed'],
+      behaviors: [...availableBehaviors], // Use dynamic behaviors from summary
       time_of_day: ['morning', 'afternoon', 'evening', 'night'],
     });
     setDurationFilter('all');
@@ -168,13 +237,31 @@ export function TimelinePage() {
     showToast('info', 'Preset saving coming in future phase');
   };
 
-  if (error) {
+  // Show "no records" if API returns empty array or error with "No data found"
+  const hasNoData = !isLoading && (!events || events.length === 0);
+  
+  if (error && !error.message?.includes('No data found')) {
     return (
       <ErrorState
         title="Failed to load timeline"
         message="We couldn't load the behavior events. Please try again."
         onRetry={() => refetch()}
       />
+    );
+  }
+  
+  if (hasNoData) {
+    return (
+      <div className="space-y-6">
+        <Card>
+          <CardContent className="p-12">
+            <EmptyState
+              title="No records found"
+              description={`No behavior data available for this animal in the selected date range (${dateRange.startDate} to ${dateRange.endDate}).`}
+            />
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
@@ -198,13 +285,14 @@ export function TimelinePage() {
                   onClick={toggleAllBehaviors}
                   className="text-xs text-primary hover:text-primary-dark"
                 >
-                  {filters.behaviors.length === 4 ? 'Clear all' : 'Select all'}
+                  {filters.behaviors.length === availableBehaviors.length ? 'Clear all' : 'Select all'}
                 </button>
               </div>
               <div className="space-y-2">
-                {(['Pacing', 'Recumbent', 'Scratching', 'Self-directed'] as BehaviorType[]).map((behavior) => {
-                  const Icon = behaviorIcons[behavior];
+                {availableBehaviors.map((behavior) => {
+                  const Icon = getBehaviorIcon(behavior);
                   const isSelected = filters.behaviors.includes(behavior);
+                  const behaviorColor = behaviorColors[behavior] || '#008C8C'; // Fallback to Teal
                   return (
                     <label
                       key={behavior}
@@ -217,7 +305,7 @@ export function TimelinePage() {
                         onChange={() => toggleBehavior(behavior)}
                         className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
                       />
-                      <Icon className="w-4 h-4" style={{ color: behaviorColors[behavior] }} />
+                      <Icon className="w-4 h-4" style={{ color: behaviorColor }} />
                       <span className="text-sm text-charcoal">{behavior}</span>
                     </label>
                   );
@@ -385,8 +473,8 @@ interface BehaviorEventCardProps {
 }
 
 function BehaviorEventCard({ event, onViewVideo }: BehaviorEventCardProps) {
-  const Icon = behaviorIcons[event.behavior_type];
-  const color = behaviorColors[event.behavior_type];
+  const Icon = getBehaviorIcon(event.behavior_type);
+  const color = getBehaviorColor(event.behavior_type);
 
   return (
     <div className="flex gap-4 p-4 border border-gray-100 rounded-xl hover:border-gray-200 hover:shadow-sm transition-all">
@@ -457,9 +545,25 @@ function VideoModal({ event, relatedEvents, onClose }: VideoModalProps) {
   const { showToast } = useToast();
   const [playbackRate, setPlaybackRate] = useState(1);
   const [videoError, setVideoError] = useState(false);
+  const videoRef = React.useRef<HTMLVideoElement>(null);
+  
+  // API layer maps s3://... -> https://... for playback
+  const videoUrl = event.video_url || '';
+  const isS3Video = isS3Url(event.raw_video_url || '');
+
+  // Update playback rate when it changes
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.playbackRate = playbackRate;
+    }
+  }, [playbackRate]);
 
   const handleDownload = () => {
-    showToast('info', 'Download coming in later phase');
+    if (isS3Video) {
+      showToast('info', 'S3 videos require backend download support');
+    } else {
+      showToast('info', 'Download coming in later phase');
+    }
   };
 
   const handleCopyLink = async () => {
@@ -480,10 +584,22 @@ function VideoModal({ event, relatedEvents, onClose }: VideoModalProps) {
           {/* Video Player */}
           <div className="lg:col-span-2">
             <div className="relative aspect-video bg-charcoal rounded-xl overflow-hidden mb-4">
-              {videoError ? (
+              {videoError || !videoUrl ? (
                 <div className="absolute inset-0 flex flex-col items-center justify-center text-white">
                   <Video className="w-12 h-12 mb-3 opacity-50" />
-                  <p className="text-sm opacity-75 mb-3">Video could not be loaded</p>
+                  {isS3Video ? (
+                    <>
+                      <p className="text-sm opacity-75 mb-2">S3 Video URL</p>
+                      <p className="text-xs opacity-50 mb-3 px-4 text-center break-all">
+                        {event.raw_video_url || event.video_url}
+                      </p>
+                      <p className="text-xs opacity-50 mb-3">
+                        Direct S3 playback requires pre-signed URLs from backend
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-sm opacity-75 mb-3">Video could not be loaded</p>
+                  )}
                   <Button
                     variant="secondary"
                     size="sm"
@@ -495,13 +611,14 @@ function VideoModal({ event, relatedEvents, onClose }: VideoModalProps) {
               ) : (
                 <>
                   <video
+                    ref={videoRef}
                     className="w-full h-full object-contain"
                     controls
                     autoPlay
                     onError={() => setVideoError(true)}
                     poster={event.thumbnail_url}
                   >
-                    <source src={event.video_url} type="video/mp4" />
+                    <source src={videoUrl} type="video/mp4" />
                     Your browser does not support the video tag.
                   </video>
 
@@ -574,6 +691,14 @@ function VideoModal({ event, relatedEvents, onClose }: VideoModalProps) {
                     {(event.confidence_score * 100).toFixed(1)}%
                   </dd>
                 </div>
+                {(event.raw_video_url || event.video_url) && (
+                  <div>
+                    <dt className="text-xs text-gray-500">Video Source</dt>
+                    <dd className="text-xs text-charcoal break-all opacity-75">
+                      {event.raw_video_url || event.video_url}
+                    </dd>
+                  </div>
+                )}
               </dl>
             </div>
 
@@ -608,7 +733,7 @@ function VideoModal({ event, relatedEvents, onClose }: VideoModalProps) {
                 <h4 className="text-sm font-medium text-charcoal mb-3">Related Behaviors</h4>
                 <div className="space-y-2">
                   {relatedEvents.map((related) => {
-                    const Icon = behaviorIcons[related.behavior_type];
+                    const Icon = getBehaviorIcon(related.behavior_type);
                     return (
                       <div
                         key={related.id}
@@ -616,7 +741,7 @@ function VideoModal({ event, relatedEvents, onClose }: VideoModalProps) {
                       >
                         <Icon
                           className="w-4 h-4"
-                          style={{ color: behaviorColors[related.behavior_type] }}
+                          style={{ color: getBehaviorColor(related.behavior_type) }}
                         />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm text-charcoal truncate">
