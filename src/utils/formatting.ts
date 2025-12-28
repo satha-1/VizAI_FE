@@ -51,30 +51,8 @@ function hashStringToInt(input: string): number {
   return Math.abs(hash);
 }
 
-function hslToHex(h: number, s: number, l: number): string {
-  // h: 0-360, s/l: 0-100
-  const _h = ((h % 360) + 360) % 360;
-  const _s = Math.max(0, Math.min(100, s)) / 100;
-  const _l = Math.max(0, Math.min(100, l)) / 100;
-
-  const c = (1 - Math.abs(2 * _l - 1)) * _s;
-  const x = c * (1 - Math.abs(((_h / 60) % 2) - 1));
-  const m = _l - c / 2;
-
-  let r1 = 0, g1 = 0, b1 = 0;
-  if (_h < 60) { r1 = c; g1 = x; b1 = 0; }
-  else if (_h < 120) { r1 = x; g1 = c; b1 = 0; }
-  else if (_h < 180) { r1 = 0; g1 = c; b1 = x; }
-  else if (_h < 240) { r1 = 0; g1 = x; b1 = c; }
-  else if (_h < 300) { r1 = x; g1 = 0; b1 = c; }
-  else { r1 = c; g1 = 0; b1 = x; }
-
-  const r = Math.round((r1 + m) * 255);
-  const g = Math.round((g1 + m) * 255);
-  const b = Math.round((b1 + m) * 255);
-
-  const toHex = (n: number) => n.toString(16).padStart(2, '0');
-  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+function hslColor(h: number, s: number, l: number) {
+  return `hsl(${h % 360}, ${s}%, ${l}%)`;
 }
 
 /**
@@ -96,14 +74,13 @@ export const getBehaviorColor = (behavior: string): string => {
   // Also avoid collisions with any already-used colors.
   const base = hashStringToInt(behavior.trim().toLowerCase());
   let hue = base % 360;
-  // Return HEX so consumers (like Heatmap shading) can safely parse it.
-  let color = hslToHex(hue, 72, 42);
+  let color = hslColor(hue, 72, 42);
 
   // Ensure uniqueness (very low collision probability, but we guard anyway)
   let attempts = 0;
   while (usedColors.has(color.toLowerCase()) && attempts < 360) {
     hue = (hue + 137) % 360; // golden angle step
-    color = hslToHex(hue, 72, 42);
+    color = hslColor(hue, 72, 42);
     attempts++;
   }
 
